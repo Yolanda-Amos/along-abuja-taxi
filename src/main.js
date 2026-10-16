@@ -753,6 +753,7 @@ const S = {
   shake: 0,
   honkCooldown: 0,
   reason: '',
+  paused: false,
 };
 
 const hud = {
@@ -853,8 +854,42 @@ function beep(freq, dur = 0.15, type = 'square', vol = 0.06, slide = 0) {
   o.start();
   o.stop(audio.currentTime + dur);
 }
+/* A car horn is two notes sounding together (about 420 Hz and 520 Hz), buzzy and nasal.
+   Built here from sawtooth waves through a band-pass filter, played as two quick taps. */
+function hornBlast(start, dur) {
+  if (!audio || muted) return;
+  const t0 = audio.currentTime + start;
+  const out = audio.createGain();
+  out.gain.setValueAtTime(0.0001, t0);
+  out.gain.exponentialRampToValueAtTime(0.22, t0 + 0.015);
+  out.gain.setValueAtTime(0.2, t0 + dur - 0.05);
+  out.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  const band = audio.createBiquadFilter();
+  band.type = 'bandpass';
+  band.frequency.value = 1100;
+  band.Q.value = 0.55;
+  const low = audio.createBiquadFilter();
+  low.type = 'lowpass';
+  low.frequency.value = 3200;
+  band.connect(low).connect(out).connect(audio.destination);
+  for (const [f, v] of [[418, 0.9], [523, 0.9], [836, 0.25], [1046, 0.2]]) {
+    const o = audio.createOscillator();
+    const g = audio.createGain();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(f * 1.012, t0);
+    o.frequency.linearRampToValueAtTime(f, t0 + 0.05);
+    g.gain.value = v;
+    o.connect(g).connect(band);
+    o.start(t0);
+    o.stop(t0 + dur + 0.02);
+  }
+}
+function carHorn() {
+  hornBlast(0, 0.2);
+  hornBlast(0.27, 0.42);
+}
 const sfx = {
-  honk: () => { beep(330, 0.22, 'square', 0.07); setTimeout(() => beep(392, 0.2, 'square', 0.07), 90); },
+  honk: () => carHorn(),
   coin: () => { beep(760, 0.09, 'sine', 0.08); setTimeout(() => beep(1040, 0.14, 'sine', 0.08), 80); },
   bump: () => beep(110, 0.3, 'sawtooth', 0.09, -60),
   pot: () => beep(160, 0.18, 'triangle', 0.08, -40),
@@ -941,12 +976,13 @@ function resetRun() {
   Object.assign(S, {
     t: 0, v: 8, dist: 0, laneIndex: 1, taxiX: 0, braking: false, fares: 0, passengers: 0, combo: 0,
     bestCombo: 0, warns: 0, fuel: 100, bumps: 3, aboard: [], stop: null, stopCount: 0,
-    nextStopAt: 100, nextObstacleAt: 70, dwell: 0, hitCooldown: 0, shake: 0, honkCooldown: 0, reason: '',
+    nextStopAt: 100, nextObstacleAt: 70, dwell: 0, hitCooldown: 0, shake: 0, honkCooldown: 0, reason: '', paused: false,
   });
 }
 
 function startRun() {
   ensureAudio();
+  $('pauseScreen').hidden = true;
   resetRun();
   S.mode = 'playing';
   S.v = 14;
@@ -1019,7 +1055,7 @@ function missedStop() {
 }
 
 function honk() {
-  if (S.mode !== 'playing' || S.honkCooldown > 0) return;
+  if (S.mode !== 'playing' || S.paused || S.honkCooldown > 0) return;
   S.honkCooldown = 0.5;
   sfx.honk();
   const st = S.stop;
@@ -1197,8 +1233,10 @@ let last = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
-  if (S.mode === 'playing') {
+  if (S.mode === 'playing' && !S.paused) {
     update(dt);
+  } else if (S.mode === 'playing') {
+    // paused: keep drawing the frozen scene
   } else {
     idleT += dt;
     // gentle idle scroll behind the menus
@@ -1258,11 +1296,22 @@ async function showOver() {
 /* ---------------------------------------------------------------
    Input
    --------------------------------------------------------------- */
+function setPaused(on) {
+  if (S.mode !== 'playing' || S.paused === on) return;
+  S.paused = on;
+  setBrake(false);
+  $('pauseScreen').hidden = !on;
+  $('pause').textContent = on ? '▶' : '❚❚';
+  $('pause').setAttribute('aria-label', on ? 'Play' : 'Pause');
+  if (audio) { if (on) audio.suspend?.(); else audio.resume?.(); }
+}
+
 function moveLane(d) {
-  if (S.mode !== 'playing') return;
+  if (S.mode !== 'playing' || S.paused) return;
   S.laneIndex = Math.max(0, Math.min(2, S.laneIndex + d));
 }
 function setBrake(on) {
+  if (on && S.paused) return;
   S.braking = on;
   $('brake').classList.toggle('down', on);
 }
@@ -1272,6 +1321,8 @@ addEventListener('keydown', (e) => {
   const k = e.key;
   if (S.mode === 'title' && (k === 'Enter' || k === ' ')) { e.preventDefault(); startRun(); return; }
   if (S.mode === 'over' && k === 'Enter') { startRun(); return; }
+  if (S.mode === 'playing' && (k === 'p' || k === 'P' || k === 'Escape')) { setPaused(!S.paused); return; }
+  if (S.paused) { if (k === 'Enter') setPaused(false); return; }
   if (k === 'ArrowLeft' || k === 'a' || k === 'A') moveLane(-1);
   else if (k === 'ArrowRight' || k === 'd' || k === 'D') moveLane(1);
   else if (k === 'ArrowDown' || k === ' ' || k === 's' || k === 'S') { e.preventDefault(); setBrake(true); }
@@ -1282,7 +1333,8 @@ addEventListener('keyup', (e) => {
   const k = e.key;
   if (k === 'ArrowDown' || k === ' ' || k === 's' || k === 'S') setBrake(false);
 });
-addEventListener('blur', () => setBrake(false));
+addEventListener('blur', () => { setBrake(false); setPaused(true); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) setPaused(true); });
 
 const brakeBtn = $('brake');
 brakeBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); ensureAudio(); setBrake(true); });
@@ -1290,12 +1342,14 @@ for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) brakeBtn.addEve
 $('honk').addEventListener('pointerdown', (e) => { e.preventDefault(); ensureAudio(); honk(); });
 
 renderer.domElement.addEventListener('pointerdown', (e) => {
-  if (S.mode !== 'playing') return;
+  if (S.mode !== 'playing' || S.paused) return;
   ensureAudio();
   moveLane(e.clientX < window.innerWidth / 2 ? -1 : 1);
 });
 
 $('playBtn').addEventListener('click', startRun);
+$('pause').addEventListener('click', () => { ensureAudio(); setPaused(!S.paused); });
+$('resumeBtn').addEventListener('click', () => setPaused(false));
 $('againBtn').addEventListener('click', startRun);
 
 /* Ask start.ng again when the player comes back to the tab (they may have signed in or out). */
@@ -1353,6 +1407,7 @@ if (params.has('debug')) {
     laneTo: (i) => { S.laneIndex = i; },
     brake: setBrake,
     honk,
+    pause: setPaused,
     player: () => player,
   };
 }
