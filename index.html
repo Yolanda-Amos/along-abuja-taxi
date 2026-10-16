@@ -65,7 +65,13 @@
   ol.board { text-align:left; margin:8px auto 0; padding-left:22px; font-size:13px; max-width:320px; }
   ol.board li.me { font-weight:800; color:var(--green); }
 
-  body.cover .hud, body.cover .seats, body.cover .next, body.cover .controls, body.cover #mute, body.cover .overlay { display:none !important; }
+  #pause { position:fixed; right:60px; top:max(102px, calc(env(safe-area-inset-top) + 94px)); width:38px; height:38px; border-radius:50%; border:0; background:rgba(255,253,246,.9); font-size:15px; font-weight:800; z-index:6; cursor:pointer; color:var(--ink); }
+  #mute { cursor:pointer; }
+  .keys { display:none; position:fixed; left:50%; bottom:16px; transform:translateX(-50%); z-index:5; pointer-events:none; background:rgba(29,43,36,.82); color:#fff; border-radius:16px; padding:10px 16px; gap:18px; align-items:center; font-size:13px; font-weight:600; }
+  .keys div { display:flex; align-items:center; gap:6px; white-space:nowrap; }
+  kbd { display:inline-flex; align-items:center; justify-content:center; min-width:28px; height:28px; padding:0 7px; border-radius:7px; background:#fffdf6; color:var(--ink); font:800 14px system-ui, sans-serif; box-shadow:0 3px 0 rgba(0,0,0,.35); }
+  @media (hover:hover) and (pointer:fine) and (min-width:700px) { .keys { display:flex; } .controls { display:none; } }
+  body.cover .hud, body.cover .seats, body.cover .next, body.cover .controls, body.cover #mute, body.cover #pause, body.cover .keys, body.cover .overlay { display:none !important; }
   #coverTitle { display:none; }
   body.cover #coverTitle { display:block; position:fixed; left:5%; top:7%; z-index:20; color:#fff; text-shadow:0 6px 0 rgba(0,0,0,.28); }
   #coverTitle h1 { margin:0; font-size:11vw; line-height:.9; letter-spacing:-2px; font-weight:900; }
@@ -88,8 +94,16 @@
 </div>
 <div class="seats" id="seats"></div>
 <div class="next" id="nextStop">Get ready…</div>
+<button id="pause" aria-label="Pause">❚❚</button>
 <button id="mute" aria-label="Sound on or off">🔊</button>
 <div id="toast"></div>
+
+<div class="keys" id="keys" aria-label="Keyboard controls">
+  <div><kbd>←</kbd><kbd>→</kbd> Move</div>
+  <div><kbd>↓</kbd> Stop</div>
+  <div><kbd>↑</kbd> Honk</div>
+  <div><kbd>P</kbd> Pause</div>
+</div>
 
 <div class="controls">
   <button id="brake">STOP</button>
@@ -102,14 +116,22 @@
     <p>You drive a green-and-white shared taxi through Abuja. Fill your four seats, drop each passenger at their stop and earn the fare.</p>
     <ul class="how">
       <li data-i="1"><b>Switch lanes</b> with ← → (or A / D), or tap the left or right side of the screen.</li>
-      <li data-i="2"><b>Hold STOP</b> (Space or ↓) in the <b>left lane</b> at a bus stop to load and drop passengers.</li>
+      <li data-i="2"><b>Hold STOP</b> (↓ or Space) in the <b>left lane</b> at a bus stop to load and drop passengers.</li>
       <li data-i="3">Miss a passenger's stop and you earn nothing from them. Chain good stops for a combo.</li>
-      <li data-i="4">An <b>unpainted car</b> lurking at a stop? <b>HONK</b> (H) to warn the passengers.</li>
+      <li data-i="4">An <b>unpainted car</b> lurking at a stop? <b>HONK</b> (↑ or H) to warn the passengers.</li>
     </ul>
     <div class="tip">Real-life tip: board only painted, registered green-and-white taxis.</div>
     <button class="btn" id="playBtn">Play</button>
     <a class="btn alt" id="signInTitle" hidden>Sign in to save scores</a>
     <p class="fine">Inspired by everyday Abuja commuting. Not affiliated with any transport operator or app.</p>
+  </div>
+</div>
+
+<div class="overlay" id="pauseScreen" hidden>
+  <div class="panel">
+    <h1>Paused<small>The taxi waits for you</small></h1>
+    <p class="fine">← → move · ↓ stop · ↑ honk · P or Esc pause</p>
+    <button class="btn" id="resumeBtn">Play</button>
   </div>
 </div>
 
